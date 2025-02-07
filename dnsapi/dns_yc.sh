@@ -91,7 +91,7 @@ dns_yc_add() {
   fi
 
   _info "Adding record"
-  if _yc_rest POST "zones/$_domain_id:upsertRecordSets" "{\"merges\": [ { \"name\":\"$_sub_domain\",\"type\":\"TXT\",\"ttl\":\"120\",\"data\":[\"$txtvalue\"]}]}"; then
+  if _yc_rest POST "zones/$_domain_id:upsertRecordSets" "{\"merges\": [ { \"name\":\"$_sub_domain$_domain\",\"type\":\"TXT\",\"ttl\":\"120\",\"data\":[\"$txtvalue\"]}]}"; then
     if _contains "$response" "\"done\": true"; then
       _info "Added, OK"
       return 0
@@ -133,7 +133,7 @@ dns_yc_rm() {
     return 1
   fi
 
-  if _yc_rest POST "zones/$_domain_id:updateRecordSets" "{\"deletions\": [ { \"name\":\"$_sub_domain\",\"type\":\"TXT\",\"ttl\":\"120\",\"data\":$exists_txtvalue}]}"; then
+  if _yc_rest POST "zones/$_domain_id:updateRecordSets" "{\"deletions\": [ { \"name\":\"$_sub_domain$_domain\",\"type\":\"TXT\",\"ttl\":\"120\",\"data\":$exists_txtvalue}]}"; then
     if _contains "$response" "\"done\": true"; then
       _info "Delete, OK"
       return 0
