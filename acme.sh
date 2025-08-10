@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-VER=3.1.0
+VER=3.1.2
 
 PROJECT_NAME="acme.sh"
 
@@ -921,6 +921,9 @@ _sed_i() {
   if sed -h 2>&1 | grep "\-i\[SUFFIX]" >/dev/null 2>&1; then
     _debug "Using sed  -i"
     sed -i "$options" "$filename"
+  elif sed -h 2>&1 | grep "\-i extension" >/dev/null 2>&1; then
+    _debug "Using FreeBSD sed -i"
+    sed -i "" "$options" "$filename"
   else
     _debug "No -i support in sed"
     text="$(cat "$filename")"
@@ -1395,6 +1398,12 @@ _ss() {
   if _exists "ss"; then
     _debug "Using: ss"
     ss -ntpl 2>/dev/null | grep ":$_port "
+    return 0
+  fi
+
+  if [ "$(uname)" = "AIX" ]; then
+    _debug "Using: AIX netstat"
+    netstat -an | grep "^tcp" | grep "LISTEN" | grep "\.$_port "
     return 0
   fi
 
@@ -2758,7 +2767,7 @@ _initAPI() {
   _request_retry_times=0
   while [ -z "$ACME_NEW_ACCOUNT" ] && [ "${_request_retry_times}" -lt "$MAX_API_RETRY_TIMES" ]; do
     _request_retry_times=$(_math "$_request_retry_times" + 1)
-    response=$(_get "$_api_server")
+    response=$(_get "$_api_server" "" 10)
     if [ "$?" != "0" ]; then
       _debug2 "response" "$response"
       _info "Cannot init API for: $_api_server."
@@ -5002,9 +5011,11 @@ $_authorizations_map"
 
         _debug "Writing token: $token to $wellknown_path/$token"
 
-        mkdir -p "$wellknown_path"
-
-        if ! printf "%s" "$keyauthorization" >"$wellknown_path/$token"; then
+        # Ensure .well-known is visible to web server user/group
+        # https://github.com/Neilpang/acme.sh/pull/32
+        if ! (umask ugo+rx &&
+          mkdir -p "$wellknown_path" &&
+          printf "%s" "$keyauthorization" >"$wellknown_path/$token"); then
           _err "$d: Cannot write token to file: $wellknown_path/$token"
           _clearupwebbroot "$_currentRoot" "$removelevel" "$token"
           _clearup
@@ -5499,6 +5510,13 @@ renew() {
   if [ -z "$Le_Keylength" ]; then
     Le_Keylength=2048
   fi
+  if [ "$CA_LETSENCRYPT_V2" = "$Le_API" ]; then
+    #letsencrypt doesn't support ocsp anymore
+    if [ "$Le_OCSP_Staple" ]; then
+      export Le_OCSP_Staple=""
+      _cleardomainconf Le_OCSP_Staple
+    fi
+  fi
   issue "$Le_Webroot" "$Le_Domain" "$Le_Alt" "$Le_Keylength" "$Le_RealCertPath" "$Le_RealKeyPath" "$Le_RealCACertPath" "$Le_ReloadCmd" "$Le_RealFullChainPath" "$Le_PreHook" "$Le_PostHook" "$Le_RenewHook" "$Le_LocalAddress" "$Le_ChallengeAlias" "$Le_Preferred_Chain" "$Le_Valid_From" "$Le_Valid_To"
   res="$?"
   if [ "$res" != "0" ]; then
@@ -5981,7 +5999,7 @@ _installcert() {
     ); then
       _info "$(__green "Reload successful")"
     else
-      _err "Reload error for: $Le_Domain"
+      _err "Reload error for: $_main_domain"
     fi
   fi
 
@@ -7015,7 +7033,7 @@ Parameters:
 
   --accountconf <file>              Specifies a customized account config file.
   --home <directory>                Specifies the home dir for $PROJECT_NAME.
-  --cert-home <directory>           Specifies the home dir to save all the certs, only valid for '--install' command.
+  --cert-home <directory>           Specifies the home dir to save all the certs.
   --config-home <directory>         Specifies the home dir to save all the configurations.
   --useragent <string>              Specifies the user agent string. it will be saved for future use too.
   -m, --email <email>               Specifies the account email, only valid for the '--install' and '--update-account' command.
